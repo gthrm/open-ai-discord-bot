@@ -14,5 +14,6 @@ module.exports = {
     'max-len': 0,
     'import/prefer-default-export': 0,
     'import/extensions': 0,
+    'no-restricted-syntax': 0,
   },
 };

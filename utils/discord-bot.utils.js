@@ -6,7 +6,7 @@ import { ask } from './open-ai.utils.js';
 config();
 
 const {
-  Client, IntentsBitField, REST, Routes, Events,
+  Client, IntentsBitField, REST, Routes, Events, Partials,
 } = discord;
 
 const token = process.env.BOT_TOKEN;
@@ -33,42 +33,78 @@ async function addCommands() {
   }
 }
 
-export async function initBot() {
-  await addCommands();
+function createClient({ intents, events, partials }) {
+  const eventsArray = Object.entries(events);
   const client = new Client({
-    intents: [
-      IntentsBitField.Flags.Guilds,
-      IntentsBitField.Flags.GuildMessages,
-      IntentsBitField.Flags.DirectMessages,
-    ],
+    intents,
+    partials,
   });
   client.on(Events.ClientReady, () => {
-    logger.info('The AI bot is online'); // message when bot is online
+    logger.info('The AI bot is online');
   });
-
-  client.on(Events.InteractionCreate, async (interaction) => {
-    logger.info('interaction', interaction);
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName === 'ping') {
-      await interaction.reply('Pong!');
-    }
-  });
-
-  client.on(Events.MessageCreate, async (message) => {
-    const identifier = `<@${process.env.CLIENT_ID}>`;
-    if (message.content.includes(identifier)) {
-      logger.info('message to bot', message);
-      const prompt = message.content.replaceAll(identifier, '');
-      if (prompt.length) {
-        const answer = await ask(prompt);
-        if (answer.length) {
-          await message.channel.send(answer);
-        }
-      }
-    }
-  });
+  for (const [eventKey, eventAction] of eventsArray) {
+    client.on(eventKey, eventAction);
+  }
 
   client.login(token);
+}
 
-  return client;
+export async function initBot() {
+  await addCommands();
+  const clientGuilds = createClient({
+    intents: [IntentsBitField.Flags.Guilds,
+      IntentsBitField.Flags.GuildMessages],
+    events: {
+      [Events.InteractionCreate]: async (interaction) => {
+        logger.info('interaction', interaction);
+        if (!interaction.isChatInputCommand()) return;
+        if (interaction.commandName === 'ping') {
+          await interaction.reply('Pong!');
+        }
+      },
+      [Events.MessageCreate]: async (message) => {
+        const identifier = `<@${clientId}>`;
+        if (message.content.includes(identifier)) {
+          logger.info('message to bot', message);
+          const prompt = message.content.replaceAll(identifier, '');
+          if (prompt.length) {
+            const answer = await ask(prompt);
+            if (answer.length) {
+              await message.channel.send(answer);
+            }
+          }
+        }
+      },
+    },
+  });
+
+  const clientDirectMessages = createClient({
+    intents: [IntentsBitField.Flags.DirectMessages],
+    partials: [Partials.Channel],
+    events: {
+      [Events.InteractionCreate]: async (interaction) => {
+        logger.info('interaction', interaction);
+        if (!interaction.isChatInputCommand()) return;
+        if (interaction.commandName === 'ping') {
+          await interaction.reply('Pong!');
+        }
+      },
+      [Events.MessageCreate]: async (message) => {
+        if (message) {
+          if (message.author.id !== clientId) {
+            const prompt = message.content;
+            logger.info('message to bot', message);
+            if (prompt.length) {
+              const answer = await ask(prompt);
+              if (answer.length) {
+                await message.channel.send(answer);
+              }
+            }
+          }
+        }
+      },
+    },
+  });
+
+  return [clientGuilds, clientDirectMessages];
 }
